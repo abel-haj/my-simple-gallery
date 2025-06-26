@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Media Gallery</title>
+    <style></style>
+    <link rel="stylesheet" href="/assets/styles.css" />
+    <link
+      rel="shortcut icon"
+      href="https://www.google.com/favicon.ico"
+      type="image/x-icon"
+    />
+    <!-- phone -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+
+    <!-- <script src="/assets/jquery.min.js"></script> -->
+    <!-- jQuery CDN -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  </head>
+
+  <body>
+    <div class="sticky sticky-right">
+      <a class="link-btn bg-b p-sm create-dir">C</a>
+      <a class="link-btn bg-b p-sm delete-btn delete-them">D</a>
+      <a class="link-btn bg-b p-sm move-them">M</a>
+      <a class="link-btn bg-b p-sm select-them">S</a>
+      <!-- New button for creating a directory -->
+    </div>
+    <div class="" style="margin-top: 4rem">
+      <div class="">
+        <!-- Search -->
+        <div class="search-filter-container">
+          <div class="filter-group">
+            <a class="link-btn bg-b p-sm filter filter-remove">All</a>
+            <a class="link-btn bg-b p-sm filter filter-video">V</a>
+            <a class="link-btn bg-b p-sm filter filter-image">P</a>
+          </div>
+          <!-- Add item count display here -->
+          <div
+            id="item-count-display"
+            style="margin-left: 10px; color: #f0f0f0"
+          >
+            <span id="total-count">0</span> items
+            <span id="selected-count-wrapper" style="display: none">
+              | <span id="selected-count">0</span> selected</span
+            >
+          </div>
+          <input
+            type="text"
+            id="search"
+            placeholder="Search for images/videos"
+            class="search"
+            aria-label="Search media"
+          />
+        </div>
+
+        <!-- Folders -->
+        <div class="folders-section">
+          <!-- Folders will be dynamically added here -->
+        </div>
+      </div>
+
+      <!-- Media Items -->
+      <div class="media-gallery">
+        <!-- Images/videos will be dynamically added here -->
+      </div>
+    </div>
+
+    <div id="folderModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <h3 style="color: #f0f0f0">Select Destination Folder</h3>
+        <div id="folderNavigation" style="margin-bottom: 10px">
+          <button id="parentFolderBtn" class="nav-btn">
+            &ShortUpArrow; Parent Folder
+          </button>
+        </div>
+        <div id="folderList" class="dark-mode"></div>
+        <button id="selectFolderBtn" class="action-btn">
+          Select
+        </button>
+        <button id="cancelFolderBtn" class="action-btn">
+          Cancel
+        </button>
+      </div>
+    </div>
+
+    <div id="createDirModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <h3 style="color: #f0f0f0">Create New Directory</h3>
+        <input
+          type="text"
+          id="newDirName"
+          placeholder="Enter directory name"
+          style="
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            border: 1px solid #444;
+          "
+        />
+        <button id="createDirBtn" class="action-btn">Create</button>
+        <button id="cancelCreateDirBtn" class="action-btn">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </body>
+
+  <script>
+    $(document).ready(function () {
+      var selecting = false;
+      var selectedItems = [];
+      var isMobile =
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+          navigator.userAgent
+        );
+
+      $(".select-them").click(function () {
+        selecting = !selecting;
+        this.innerHTML = selecting ? "U" : "S";
+        $(".selected").removeClass("selected");
+        // Add visual feedback for selection mode
+        $("body").toggleClass("selection-mode", selecting);
+
+        // Add preview buttons if entering selection mode
+        if (selecting) {
+          addPreviewButtons();
+          addPreviewButtonHandlers();
+        } else {
+          removePreviewButtons();
+        }
+      });
+
+      // Handle video playback for both desktop and mobile
+      $(".media-gallery-item video").each(function () {
+        var video = this;
+
+        if (!isMobile) {
+          // Desktop hover behavior
+          $(video).hover(
+            function () {
+              if (!selecting) {
+                this.play();
+              }
+            },
+            function () {
+              this.pause();
+              this.currentTime = 0;
+            }
+          );
+        }
+      });
+
+      $(".media-gallery-item").click(function (e) {
+        if (selecting) {
+          e.preventDefault();
+          e.stopPropagation();
+          $(this).toggleClass("selected");
+          updateCounts(); // Update counts after selection changes
+        }
+      });
+
+      $(".move-them").click(function () {
+        if ($(".selected").length == 0) {
+          return;
+        }
+
+        let currentFolder = window.location.pathname; // Start with the current folder
+
+        // Open the modal
+        $("#folderModal").show();
+
+        // Function to fetch and display folders
+        const fetchFolders = (folderPath) => {
+          $.ajax({
+            url: "/folders", // Endpoint to fetch folder structure
+            type: "GET",
+            data: { path: folderPath }, // Send the current folder path
+            success: function (folders) {
+              const folderList = $("#folderList");
+              folderList.empty();
+              folders.forEach((folder) => {
+                folderList.append(
+                  `<div data-path="${folder.path}">${folder.name}</div>`
+                );
+              });
+
+              // Handle folder selection
+              $("#folderList div")
+                .off("click")
+                .on("click", function () {
+                  currentFolder = $(this).data("path"); // Update current folder
+                  fetchFolders(currentFolder); // Navigate into the selected folder
+                });
+            },
+            error: function (error) {
+              alert("Error fetching folders");
+              console.error(error);
+            },
+          });
+        };
+
+        // Fetch initial folders
+        fetchFolders(currentFolder);
+
+        // Navigate to parent folder - unbind previous handlers first
+        $("#parentFolderBtn")
+          .off("click")
+          .on("click", function () {
+            const parentFolder = currentFolder
+              .split("/")
+              .slice(0, -1)
+              .join("/");
+            if (parentFolder) {
+              currentFolder = parentFolder;
+              fetchFolders(currentFolder);
+            }
+          });
+
+        // Handle modal actions - unbind previous handlers first
+        $("#selectFolderBtn")
+          .off("click")
+          .on("click", function () {
+            const selectedFolder = currentFolder; // Use the current folder as the destination
+            if (!selectedFolder) {
+              alert("Please select a folder");
+              return;
+            }
+
+            const selectedItems = [];
+            $(".selected").each(function () {
+              selectedItems.push($(this).find("a").attr("id"));
+            });
+
+            // Send "MOVE" request to server
+            $.ajax({
+              url: "/moveItems",
+              type: "POST",
+              contentType: "application/json",
+              data: JSON.stringify({
+                itemIds: selectedItems,
+                newLocation: selectedFolder.replace(
+                  window.location.pathname,
+                  ""
+                ), // Relative path
+                currentLocation: window.location.pathname,
+              }),
+              success: function (response) {
+                alert(response);
+                $(".selected").remove();
+                $(".select-them").click();
+                $("#folderModal").hide();
+                updateCounts();
+              },
+              error: function (error) {
+                alert("Error moving items");
+                console.error(error);
+              },
+            });
+          });
+
+        $("#cancelFolderBtn")
+          .off("click")
+          .on("click", function () {
+            $("#folderModal").hide();
+          });
+      });
+
+      $(".delete-them").click(function () {
+        const selectedItems = $(".selected");
+        const totalSelected = selectedItems.length;
+
+        if (totalSelected === 0) {
+          alert("No items selected for deletion.");
+          return;
+        }
+
+        // Show a prompt with the number of selected items
+        const userInput = prompt(
+          `You have selected ${totalSelected} item(s) for deletion. Enter the number of items to delete (max: ${totalSelected}):`,
+          totalSelected
+        );
+
+        // Validate user input
+        const itemsToDelete = parseInt(userInput, 10);
+        if (isNaN(itemsToDelete) || itemsToDelete <= 0) {
+          alert("Invalid number. No items were deleted.");
+          return;
+        }
+
+        // Collect the IDs or hrefs of the items to delete
+        const itemsToDeleteIds = [];
+        selectedItems.slice(0, itemsToDelete).each(function () {
+          itemsToDeleteIds.push($(this).find("a").attr("href"));
+        });
+
+        // Send "DELETE" request to the server
+        $.ajax({
+          url: "/deleteItems", // Replace with your server endpoint
+          type: "DELETE",
+          contentType: "application/json",
+          data: JSON.stringify({
+            itemIds: itemsToDeleteIds,
+            currentLocation: "",
+          }),
+          success: function (response) {
+            alert(response);
+            console.log(response);
+
+            // Remove the deleted items from the DOM
+            selectedItems.slice(0, itemsToDelete).remove();
+            $(".select-them").click(); // Exit selection mode
+            updateCounts();
+          },
+          error: function (error) {
+            alert("There was an error deleting the items.");
+            console.error(error);
+          },
+        });
+      });
+
+      $(".create-dir").click(function () {
+        $("#createDirModal").show();
+
+        $("#createDirBtn").click(function () {
+          const newDirName = $("#newDirName").val().trim();
+          if (!newDirName) {
+            alert("Please enter a directory name.");
+            return;
+          }
+
+          $.ajax({
+            url: "/createDirectory",
+            type: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({
+              name: newDirName,
+              currentLocation: window.location.pathname,
+            }), // Send the current folder path
+            success: function (response) {
+              alert(response);
+              $("#createDirModal").hide();
+            },
+            error: function (error) {
+              alert(
+                "Error creating directory: " + error.responseText
+              );
+              console.error(error);
+            },
+          });
+        });
+
+        $("#cancelCreateDirBtn").click(function () {
+          $("#createDirModal").hide();
+        });
+      });
+
+      // press '/' to focus on search
+      $(document).keypress(function (e) {
+        if (e.which == 47) {
+          e.preventDefault(); // to prevent '/' from being written
+          $("#search").focus();
+        }
+      });
+
+      $("#search").on("keyup paste", function () {
+        var el = $(this);
+        setTimeout(function () {
+          var value = el.val().toLowerCase();
+          $(".media-gallery-item").filter(function () {
+            // child of the media-gallery-item has an id that we use to filter
+
+            // advanced search: search can include multiple matchers separated by space or comma
+            var matchers = value
+              .split(/[\s,]+/)
+              ?.filter((matcher) => matcher.length > 0); // remove empty
+
+            if (matchers.length == 0) {
+              $(this).show();
+            } else {
+              var id = $(this).find("a").attr("id").toLowerCase();
+              var matches = matchers.filter(
+                (matcher) => id.indexOf(matcher) > -1
+              );
+              $(this).toggle(matches.length > 0);
+            }
+
+            // basic search: one result
+            // $(this).toggle($(this).find("a").attr("id").toLowerCase().indexOf(value) > -1);
+          });
+          updateCounts(); // Update counts after search
+        }, 100);
+      });
+
+      $(".filter").click(function () {
+        if ($(this).hasClass("filter-remove")) {
+          $(".media-gallery-item").show();
+        } else if ($(this).hasClass("filter-video")) {
+          $(".media-gallery-item")
+            .filter(function () {
+              return $(this).find("video").length > 0;
+            })
+            .show();
+          $(".media-gallery-item")
+            .filter(function () {
+              return $(this).find("video").length == 0;
+            })
+            .hide();
+        } else if ($(this).hasClass("filter-image")) {
+          $(".media-gallery-item")
+            .filter(function () {
+              return $(this).find("img").length > 0;
+            })
+            .show();
+          $(".media-gallery-item")
+            .filter(function () {
+              return $(this).find("img").length == 0;
+            })
+            .hide();
+        }
+        updateCounts(); // Update counts after filtering
+      });
+
+      // Call this when page loads
+      updateCounts();
+    });
+
+    // Add preview buttons to media items
+    function addPreviewButtons() {
+      $(".media-gallery-item").each(function () {
+        // Only add preview button if it doesn't already exist
+        if ($(this).find(".preview-btn").length === 0) {
+          $(this).append('<div class="preview-btn">Preview</div>');
+        }
+      });
+    }
+
+    function removePreviewButtons() {
+      $(".preview-btn").remove();
+    }
+
+    // Refactored event handlers
+    function addPreviewButtonHandlers() {
+      $(".preview-btn")
+        .off("click")
+        .on("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+
+          const mediaItem = $(this).closest(".media-gallery-item");
+          const link = mediaItem.find("a").get(0);
+          const isVideo = mediaItem.find("video").length > 0;
+
+          // Use the MediaPreview module
+          MediaPreview.show(link.href, isVideo);
+        });
+    }
+
+    // Add this function to update counts
+    function updateCounts() {
+      // Count visible items
+      const visibleCount = $(".media-gallery-item:visible").length;
+      $("#total-count").text(visibleCount);
+
+      // Count selected items
+      const selectedCount = $(".selected").length;
+      if (selectedCount > 0) {
+        $("#selected-count").text(selectedCount);
+        $("#selected-count-wrapper").show();
+      } else {
+        $("#selected-count-wrapper").hide();
+      }
+    }
+  </script>
+
+  <script>
+    // MediaPreview module for handling all preview functionality
+    const MediaPreview = {
+      // Create and show a media preview (works for both images and videos)
+      show: function (mediaSource, isVideo = false) {
+        // Create container
+        const container = this._createContainer();
+
+        // Create and attach close button
+        const closeButton = this._createCloseButton();
+        container.appendChild(closeButton);
+
+        // Create appropriate media element
+        if (isVideo) {
+          this._createVideoElement(container, mediaSource);
+        } else {
+          this._createImageElement(container, mediaSource);
+        }
+
+        // Set up event handlers
+        const escHandler = this._setupEventHandlers(container);
+
+        // Close button handler
+        closeButton.addEventListener("click", () => {
+          this._closePreview(container, escHandler);
+        });
+
+        // Add to DOM
+        document.body.appendChild(container);
+
+        return container;
+      },
+
+      // Private methods
+      _createContainer: function () {
+        const container = document.createElement("div");
+        container.className = "media-preview-container";
+        container.style.position = "fixed";
+        container.style.top = "0";
+        container.style.left = "0";
+        container.style.width = "100%";
+        container.style.height = "100%";
+        container.style.backgroundColor = "rgba(0,0,0,0.9)";
+        container.style.zIndex = "9999";
+        container.style.display = "flex";
+        container.style.justifyContent = "center";
+        container.style.alignItems = "center";
+        return container;
+      },
+
+      _createCloseButton: function () {
+        const closeButton = document.createElement("div");
+        closeButton.innerHTML = "â"; // Fixed character encoding
+        closeButton.className = "media-preview-close-btn";
+        closeButton.style.position = "absolute";
+        closeButton.style.top = "15px";
+        closeButton.style.right = "15px";
+        closeButton.style.color = "white";
+        closeButton.style.fontSize = "24px";
+        closeButton.style.cursor = "pointer";
+        closeButton.style.width = "40px";
+        closeButton.style.height = "40px";
+        closeButton.style.display = "flex";
+        closeButton.style.justifyContent = "center";
+        closeButton.style.alignItems = "center";
+        closeButton.style.background = "rgba(0,0,0,0.5)";
+        closeButton.style.borderRadius = "50%";
+        closeButton.style.zIndex = "10001";
+        return closeButton;
+      },
+
+      _createVideoElement: function (container, source) {
+        const video = document.createElement("video");
+        video.src = source;
+        video.controls = true;
+        video.autoplay = true;
+        video.loop = true;
+        video.style.maxWidth = "90%";
+        video.style.maxHeight = "90%";
+        container.appendChild(video);
+        return video;
+      },
+
+      _createImageElement: function (container, source) {
+        const image = document.createElement("img");
+        image.src = source;
+        image.style.maxWidth = "90%";
+        image.style.maxHeight = "90%";
+        image.style.objectFit = "contain";
+
+        const imageWrapper = document.createElement("div");
+        imageWrapper.className = "image-zoom-wrapper";
+        imageWrapper.style.overflow = "hidden";
+        imageWrapper.style.width = "100%";
+        imageWrapper.style.height = "100%";
+        imageWrapper.style.display = "flex";
+        imageWrapper.style.justifyContent = "center";
+        imageWrapper.style.alignItems = "center";
+
+        // Make the wrapper transparent to clicks
+        // This allows clicks on empty areas to reach the container
+        imageWrapper.style.pointerEvents = "none";
+
+        // But keep the image itself clickable for zoom operations
+        image.style.pointerEvents = "auto";
+
+        imageWrapper.appendChild(image);
+        container.appendChild(imageWrapper);
+
+        // Initialize zoom functionality on mobile
+        if (this._isMobile()) {
+          ImageZoom.initialize(image, imageWrapper);
+        }
+
+        return image;
+      },
+
+      _setupEventHandlers: function (container) {
+        // ESC key handler
+        const escHandler = (e) => {
+          if (e.key === "Escape") {
+            this._closePreview(container, escHandler);
+          }
+        };
+        document.addEventListener("keydown", escHandler);
+
+        // Click outside handler (works for both images and videos)
+        container.addEventListener("click", (e) => {
+          if (e.target === container) {
+            this._closePreview(container, escHandler);
+          }
+        });
+
+        return escHandler;
+      },
+
+      _closePreview: function (container, escHandler) {
+        if (document.body.contains(container)) {
+          document.body.removeChild(container);
+          document.removeEventListener("keydown", escHandler);
+        }
+      },
+
+      _isMobile: function () {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+          navigator.userAgent
+        );
+      },
+    };
+
+    // ImageZoom module for handling image zoom functionality
+    const ImageZoom = {
+      initialize: function (imageElement, wrapperElement) {
+        let currentScale = 1;
+        let posX = 0;
+        let posY = 0;
+        let startX = 0;
+        let startY = 0;
+
+        // Add double-tap to zoom
+        let lastTap = 0;
+        imageElement.addEventListener("touchend", function (e) {
+          const now = new Date().getTime();
+          const timeSince = now - lastTap;
+          if (timeSince < 300 && timeSince > 0) {
+            // Double tap detected
+            if (currentScale === 1) {
+              currentScale = 2.5;
+              updateImageTransform();
+            } else {
+              resetZoom();
+            }
+            e.preventDefault();
+          }
+          lastTap = now;
+        });
+
+        // Add pinch to zoom
+        let initialDistance = 0;
+        imageElement.addEventListener("touchstart", function (e) {
+          if (e.touches.length === 2) {
+            initialDistance = getDistance(e.touches[0], e.touches[1]);
+            e.preventDefault();
+          } else if (e.touches.length === 1 && currentScale > 1) {
+            startX = e.touches[0].clientX - posX;
+            startY = e.touches[0].clientY - posY;
+            e.preventDefault();
+          }
+        });
+
+        imageElement.addEventListener("touchmove", function (e) {
+          if (e.touches.length === 2) {
+            // Pinch-to-zoom
+            const distance = getDistance(e.touches[0], e.touches[1]);
+            currentScale = Math.min(
+              Math.max(
+                currentScale * (distance / initialDistance),
+                1
+              ),
+              5
+            );
+            initialDistance = distance;
+            updateImageTransform();
+            e.preventDefault();
+          } else if (e.touches.length === 1 && currentScale > 1) {
+            // Pan when zoomed in
+            posX = e.touches[0].clientX - startX;
+            posY = e.touches[0].clientY - startY;
+            updateImageTransform();
+            e.preventDefault();
+          }
+        });
+
+        function getDistance(touch1, touch2) {
+          return Math.hypot(
+            touch2.clientX - touch1.clientX,
+            touch2.clientY - touch1.clientY
+          );
+        }
+
+        function updateImageTransform() {
+          // Limit panning to prevent completely moving image out of view
+          const maxPosX =
+            (imageElement.width * currentScale - imageElement.width) /
+            2;
+          const maxPosY =
+            (imageElement.height * currentScale -
+              imageElement.height) /
+            2;
+          posX = Math.min(Math.max(posX, -maxPosX), maxPosX);
+          posY = Math.min(Math.max(posY, -maxPosY), maxPosY);
+
+          imageElement.style.transform = `translate(${posX}px, ${posY}px) scale(${currentScale})`;
+          imageElement.style.transformOrigin = "center";
+          imageElement.style.transition =
+            currentScale === 1 ? "transform 0.3s" : "none";
+        }
+
+        function resetZoom() {
+          currentScale = 1;
+          posX = 0;
+          posY = 0;
+          updateImageTransform();
+        }
+
+        // Add zoom controls
+        const zoomControls = this._createZoomControls(
+          () => {
+            currentScale = Math.min(currentScale + 0.5, 5);
+            updateImageTransform();
+          },
+          () => {
+            currentScale = Math.max(currentScale - 0.5, 1);
+            updateImageTransform();
+          }
+        );
+        wrapperElement.parentNode.appendChild(zoomControls);
+
+        // Add reset button
+        const resetButton = this._createResetButton(resetZoom);
+        wrapperElement.parentNode.appendChild(resetButton);
+      },
+
+      _createZoomControls: function (zoomInFn, zoomOutFn) {
+        const zoomControls = document.createElement("div");
+        zoomControls.style.position = "absolute";
+        zoomControls.style.bottom = "20px";
+        zoomControls.style.left = "20px";
+        zoomControls.style.zIndex = "10000";
+        zoomControls.style.display = "flex";
+        zoomControls.style.gap = "10px";
+
+        const zoomInBtn = this._createButton("+", zoomInFn);
+        const zoomOutBtn = this._createButton("â", zoomOutFn); // Fixed character encoding
+
+        zoomControls.appendChild(zoomOutBtn);
+        zoomControls.appendChild(zoomInBtn);
+
+        return zoomControls;
+      },
+
+      _createResetButton: function (resetFn) {
+        const resetButton = this._createButton("1:1", resetFn);
+        resetButton.style.position = "absolute";
+        resetButton.style.bottom = "20px";
+        resetButton.style.right = "20px";
+
+        return resetButton;
+      },
+
+      _createButton: function (text, onClickFn) {
+        const button = document.createElement("button");
+        button.textContent = text;
+        button.style.background = "rgba(0,0,0,0.5)";
+        button.style.color = "white";
+        button.style.border = "none";
+        button.style.borderRadius = "4px";
+        button.style.padding = "8px 15px";
+        button.style.fontSize = "18px";
+        button.style.zIndex = "10000";
+        button.addEventListener("click", onClickFn);
+
+        return button;
+      },
+    };
+
+    // When page loads
+    document.addEventListener("DOMContentLoaded", function () {
+      // Video link handler
+      document.querySelectorAll(".video-link").forEach((link) => {
+        link.addEventListener("click", function (e) {
+          if (document.body.classList.contains("selection-mode")) {
+            return; // Let selection handler take care of it
+          }
+
+          e.preventDefault();
+          MediaPreview.show(this.href, true); // true = is video
+        });
+      });
+
+      // Image link handler
+      document
+        .querySelectorAll(".media-gallery-item a:not(.video-link)")
+        .forEach((link) => {
+          link.addEventListener("click", function (e) {
+            if (
+              !document.body.classList.contains("selection-mode") &&
+              (this.href.endsWith(".jpg") ||
+                this.href.endsWith(".jpeg") ||
+                this.href.endsWith(".png") ||
+                this.href.endsWith(".gif") ||
+                this.href.endsWith(".webp"))
+            ) {
+              e.preventDefault();
+              MediaPreview.show(this.href, false); // false = is image
+            }
+          });
+        });
+    });
+  </script>
+
+  <script src="/assets/LocalDB.min.js"></script>
+</html>
